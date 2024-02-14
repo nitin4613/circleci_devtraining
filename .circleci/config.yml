@@ -1,0 +1,186 @@
+version: 2.1
+
+executors:
+  linux-machine:
+    machine:
+      image: ubuntu-2204:2023.02.1
+  
+  macos:
+    macos:
+      xcode: 14.2.0
+    resource_class: macos.m1.large.gen1
+  
+  my-executor:
+    docker:
+      - image: node:15.0.0
+        #auth:
+        #  username: mydockerhub-user
+        #  password: $DOCKERHUB_PASSWORD  # context / project UI env-var reference
+    working_directory: /tmp
+
+jobs:
+  flow:
+    executor: my-executor
+    steps:
+      - run: mkdir -p workspace
+      - run: echo "Hello, world!" > workspace/echo-output
+
+      # Persist the specified paths (workspace/echo-output) into the workspace for use in downstream job.
+      - persist_to_workspace:
+          # Must be an absolute path, or relative path from working_directory. This is a directory on the container which is
+          # taken to be the root directory of the workspace.
+          root: workspace
+          # Must be relative path from root
+          paths:
+            - echo-output
+
+  downstream:
+    executor: my-executor
+    steps:
+      - attach_workspace:
+          # Must be absolute path or relative path from working_directory
+          at: /tmp/workspace
+
+      - run: 
+           name: Verify Workspace contents
+           command: |
+                if [[ `cat /tmp/workspace/echo-output` == "Hello, world!" ]]; then
+                  echo "It worked!";
+                else
+                  echo "Nope!"; exit 1
+                fi
+
+  build:
+    executor: linux-machine
+    steps:
+      - checkout
+      - run: 
+          name: Check CLI commands
+          command: | 
+             echo "Running CircleCI cli"
+             circleci version
+      - run:
+          name: Creating Dummy Artifacts
+          command: |
+            echo "my artifact file" > /tmp/art-1;
+            mkdir /tmp/artifacts;
+            echo "my artifact files in a dir" > /tmp/artifacts/art-2;
+      - store_artifacts:
+            path: /tmp/art-1
+            destination: artifact-file
+      - store_artifacts:
+            path: /tmp/artifacts
+            
+  docker-job:
+    executor: linux-machine
+    steps:
+      - run: echo "This runs on Docker!"
+            
+  linux-job:
+    executor: linux-machine
+    steps:
+      - run: echo "This runs on a Linux VM!"
+            
+  macos-job:
+    executor: macos
+    steps:
+      - run: echo "This runs on a Mac!"
+
+  acceptance_test_1:
+    executor: my-executor
+    steps:
+      - run: echo "This is acceptance test 1!"
+
+  acceptance_test_2:
+    executor: my-executor
+    steps:
+      - run: echo "This is acceptance test 2!"
+
+  acceptance_test_3:
+    executor: my-executor
+    steps:
+      - run: echo "This is acceptance test 3!"
+
+  acceptance_test_4:
+    executor: my-executor
+    steps:
+      - run: echo "This is acceptance test 4!"
+
+  deploy:
+    executor: my-executor
+    steps:
+      - run: echo "This is a deploy step!"
+
+  test1:
+    executor: my-executor
+    steps:
+      - checkout
+      - run: 
+          name: Tests can run here
+          command: |
+             hostname -I | awk '{print $1}'
+             docker run hello-world
+             
+
+  test2:
+    executor: linux-machine
+    steps:
+      - checkout
+      - run: Tests can run here
+      - run: 
+          name: Run docker hello-world
+          command: |
+             hostname -I | awk '{print $1}'
+             docker run hello-world
+
+  test3:
+    executor: linux-machine
+    steps:
+      - checkout
+      - run: Tests can run here
+      - run: 
+          name: Run test 3 
+          command: |
+             hostname -I | awk '{print $1}'
+             docker run hello-world
+
+
+workflows:
+  executors:
+    jobs:
+      - docker-job
+      - macos-job:
+          requires:
+            - docker-job
+      - linux-job:
+          requires:
+             - macos-job
+             
+  workspaces:
+    jobs:
+      - flow
+      - downstream:
+          requires:
+            - flow
+            
+  main:
+    jobs:
+      - build
+      - acceptance_test_1:
+          requires:
+            - build
+      - acceptance_test_2:
+          requires:
+            - build
+      - acceptance_test_3:
+          requires:
+            - build
+      - acceptance_test_4:
+          requires:
+            - build
+      - deploy:
+          requires:
+            - acceptance_test_1
+            - acceptance_test_2
+            - acceptance_test_3
+            - acceptance_test_4
